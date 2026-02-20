@@ -1,0 +1,10 @@
+torch>=2.0.0
+torchaudio>=2.0.0
+numpy
+scipy
+librosa
+matplotlib
+tensorboard
+Cython
+phonemizer
+Unidecode
