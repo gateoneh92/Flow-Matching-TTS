@@ -56,7 +56,7 @@ def run(rank, n_gpus, hps):
     num_replicas=n_gpus,
     rank=rank,
     shuffle=True)
-  collate_fn = TextMelCollate(1)
+  collate_fn = TextMelCollate(return_ids=False)
   train_loader = DataLoader(train_dataset, num_workers=8, shuffle=False,
     batch_size=hps.train.batch_size, pin_memory=True,
     collate_fn=collate_fn, sampler=train_sampler)
@@ -71,10 +71,10 @@ def run(rank, n_gpus, hps):
     n_text_vocab=hps.model.n_text_vocab,
     n_mel_channels=hps.data.n_mel_channels,
     inter_channels=hps.model.inter_channels,
-    d_model=hps.model.get('flow_d_model', 512),
-    nhead=hps.model.get('flow_nhead', 8),
-    num_layers=hps.model.get('flow_num_layers', 12),
-    dim_feedforward=hps.model.get('flow_dim_feedforward', 2048),
+    d_model=getattr(hps.model, 'flow_d_model', 512),
+    nhead=getattr(hps.model, 'flow_nhead', 8),
+    num_layers=getattr(hps.model, 'flow_num_layers', 12),
+    dim_feedforward=getattr(hps.model, 'flow_dim_feedforward', 2048),
     dropout=hps.model.p_dropout,
     resblock=hps.model.resblock,
     resblock_kernel_sizes=hps.model.resblock_kernel_sizes,
@@ -85,12 +85,12 @@ def run(rank, n_gpus, hps):
     gen_istft_n_fft=hps.model.gen_istft_n_fft,
     gen_istft_hop_size=hps.model.gen_istft_hop_size,
     subbands=hps.model.subbands,
-    use_duration_predictor=hps.model.get('use_duration_predictor', True),
+    use_duration_predictor=getattr(hps.model, 'use_duration_predictor', True),
     gin_channels=hps.model.gin_channels,
   ).cuda(rank)
 
   # Discriminator for vocoder part (optional, for better audio quality)
-  use_discriminator = hps.train.get('use_discriminator', True)
+  use_discriminator = getattr(hps.train, 'use_discriminator', True)
   if use_discriminator:
     net_d = MultiPeriodDiscriminator().cuda(rank)
 
@@ -109,9 +109,9 @@ def run(rank, n_gpus, hps):
       eps=hps.train.eps)
 
   # DDP
-  net_g = DDP(net_g, device_ids=[rank])
+  net_g = DDP(net_g, device_ids=[rank], find_unused_parameters=True)
   if use_discriminator:
-    net_d = DDP(net_d, device_ids=[rank])
+    net_d = DDP(net_d, device_ids=[rank], find_unused_parameters=True)
 
   # Load checkpoint
   try:
@@ -181,7 +181,7 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
       loss_dict = net_g(text, text_lengths, mel, mel_lengths)
 
       loss_flow = loss_dict['flow_loss']
-      loss_dur = loss_dict.get('duration_loss', 0)
+      loss_dur = loss_dict.get('duration_loss', torch.tensor(0.0).cuda(rank))
 
       loss_gen = loss_flow + 0.1 * loss_dur  # Weight duration loss lower
 

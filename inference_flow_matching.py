@@ -8,6 +8,7 @@ import argparse
 import json
 from scipy.io import wavfile
 import utils
+import commons
 from models import FlowMatchingSynthesizer
 from text import text_to_sequence
 
@@ -26,10 +27,10 @@ def load_model(checkpoint_path, config_path, device='cuda'):
         n_text_vocab=hps.model.n_text_vocab,
         n_mel_channels=hps.data.n_mel_channels,
         inter_channels=hps.model.inter_channels,
-        d_model=hps.model.get('flow_d_model', 512),
-        nhead=hps.model.get('flow_nhead', 8),
-        num_layers=hps.model.get('flow_num_layers', 12),
-        dim_feedforward=hps.model.get('flow_dim_feedforward', 2048),
+        d_model=getattr(hps.model, 'flow_d_model', 512),
+        nhead=getattr(hps.model, 'flow_nhead', 8),
+        num_layers=getattr(hps.model, 'flow_num_layers', 12),
+        dim_feedforward=getattr(hps.model, 'flow_dim_feedforward', 2048),
         dropout=hps.model.p_dropout,
         resblock=hps.model.resblock,
         resblock_kernel_sizes=hps.model.resblock_kernel_sizes,
@@ -40,7 +41,7 @@ def load_model(checkpoint_path, config_path, device='cuda'):
         gen_istft_n_fft=hps.model.gen_istft_n_fft,
         gen_istft_hop_size=hps.model.gen_istft_hop_size,
         subbands=hps.model.subbands,
-        use_duration_predictor=hps.model.get('use_duration_predictor', True),
+        use_duration_predictor=getattr(hps.model, 'use_duration_predictor', True),
         gin_channels=hps.model.gin_channels,
     ).to(device)
 
