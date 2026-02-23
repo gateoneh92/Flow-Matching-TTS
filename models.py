@@ -162,21 +162,27 @@ class FlowMatchingSynthesizer(nn.Module):
     losses = self.flow_tts(text, text_lengths, mel, mel_lengths)
 
     # Vocoder reconstruction loss
-    # Pass real mel through vocoder and reconstruct
-    with torch.no_grad():
-        # Use predicted mel from flow matching for vocoder training
-        mel_pred = losses.get('mel_pred', mel)  # Use predicted mel if available, else use GT
-
     # Generate audio from mel
-    y_hat, _, _ = self.dec(mel)
+    y_hat, spec_out, phase_out = self.dec(mel)  # y_hat: (B, 1, T_audio) or (B, subbands, 1, T_audio)
 
     # Convert audio back to mel
-    mel_recon = self.mel_transform(y_hat.squeeze(1))  # Remove channel dim for transform
+    # Handle potential extra dimensions from MB-iSTFT
+    if y_hat.dim() == 4:  # (B, subbands, 1, T_audio)
+        audio = y_hat.squeeze(2).flatten(1, 2)  # (B, subbands * T_audio) - flatten subbands
+    else:  # (B, 1, T_audio)
+        audio = y_hat.squeeze(1)  # (B, T_audio)
+
+    # Move mel_transform to same device as audio
+    if not hasattr(self, '_mel_transform_device_set'):
+        self.mel_transform = self.mel_transform.to(audio.device)
+        self._mel_transform_device_set = True
+
+    mel_recon = self.mel_transform(audio)  # (B, n_mel, T_mel_recon)
     mel_recon = torch.log(torch.clamp(mel_recon, min=1e-5))  # Log mel like in data_utils
 
     # Mel reconstruction loss (L1)
-    # Match dimensions - mel_recon might be slightly longer due to padding
-    min_len = min(mel.size(2), mel_recon.size(2))
+    # Match dimensions - mel_recon might be slightly different in time due to STFT windowing
+    min_len = min(mel.size(2), mel_recon.size(2))  # Match time dimension
     loss_mel_recon = F.l1_loss(mel_recon[:, :, :min_len], mel[:, :, :min_len])
 
     losses['mel_recon_loss'] = loss_mel_recon
