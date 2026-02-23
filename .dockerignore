@@ -1,0 +1,30 @@
+# Exclude from Docker build
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.log
+
+# Exclude training outputs
+logs/
+checkpoints/
+outputs/
+*.pth
+*.ckpt
+
+# Exclude data (will be mounted)
+datasets/
+filelists/*.cleaned
+
+# Exclude git
+.git/
+.gitignore
+
+# Exclude temporary files
+*.swp
+*.swo
+*~
+.DS_Store

@@ -15,7 +15,7 @@
     "warmup_epochs": 0,
     "c_mel": 45,
     "c_kl": 1.0,
-    "use_discriminator": false,
+    "use_discriminator": true,
     "port": 50000
   },
   "data": {

@@ -205,12 +205,20 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
       with autocast(enabled=hps.train.fp16_run):
         # Generate mel
         with torch.no_grad():
-          mel_gen, _ = net_g.module.flow_tts.flow_matching.sample(
+          mel_gen = net_g.module.flow_tts.flow_matching.sample(
             text, text_lengths, mel_lengths, n_timesteps=5)  # Fast generation for training
 
         # Generate audio from both real and fake mel
-        y_hat, _ = net_g.module.dec(mel_gen)
-        y, _ = net_g.module.dec(mel)
+        y_hat, _, _ = net_g.module.dec(mel_gen)
+        y, _, _ = net_g.module.dec(mel)
+
+        # Handle MB-iSTFT 4D output: (B, subbands, 1, T) -> (B, 1, T)
+        if y_hat.dim() == 4:
+          y_hat = y_hat.flatten(1, 2)  # (B, subbands * 1, T) = (B, subbands, T)
+          y = y.flatten(1, 2)
+          # Average across subbands for discriminator
+          y_hat = y_hat.mean(dim=1, keepdim=True)  # (B, 1, T)
+          y = y.mean(dim=1, keepdim=True)
 
         # Discriminator
         y_d_hat_r, y_d_hat_g, _, _ = net_d(y, y_hat.detach())
