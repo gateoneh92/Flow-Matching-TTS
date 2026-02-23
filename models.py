@@ -127,6 +127,26 @@ class FlowMatchingSynthesizer(nn.Module):
 
     self.n_mel_channels = n_mel_channels
 
+    # Mel-spectrogram transform for reconstruction loss
+    # Extract audio params from kwargs or use defaults
+    sampling_rate = kwargs.get('sampling_rate', 22050)
+    filter_length = kwargs.get('filter_length', 1024)
+    hop_length = kwargs.get('hop_length', 256)
+    win_length = kwargs.get('win_length', 1024)
+    mel_fmin = kwargs.get('mel_fmin', 0.0)
+    mel_fmax = kwargs.get('mel_fmax', None)
+
+    import torchaudio
+    self.mel_transform = torchaudio.transforms.MelSpectrogram(
+        sample_rate=sampling_rate,
+        n_fft=filter_length,
+        win_length=win_length,
+        hop_length=hop_length,
+        f_min=mel_fmin,
+        f_max=mel_fmax,
+        n_mels=n_mel_channels
+    )
+
   def forward(self, text, text_lengths, mel, mel_lengths):
     """
     Training forward
@@ -138,7 +158,29 @@ class FlowMatchingSynthesizer(nn.Module):
 
     Returns: dict with losses
     """
+    # Flow matching losses
     losses = self.flow_tts(text, text_lengths, mel, mel_lengths)
+
+    # Vocoder reconstruction loss
+    # Pass real mel through vocoder and reconstruct
+    with torch.no_grad():
+        # Use predicted mel from flow matching for vocoder training
+        mel_pred = losses.get('mel_pred', mel)  # Use predicted mel if available, else use GT
+
+    # Generate audio from mel
+    y_hat, _, _ = self.dec(mel)
+
+    # Convert audio back to mel
+    mel_recon = self.mel_transform(y_hat.squeeze(1))  # Remove channel dim for transform
+    mel_recon = torch.log(torch.clamp(mel_recon, min=1e-5))  # Log mel like in data_utils
+
+    # Mel reconstruction loss (L1)
+    # Match dimensions - mel_recon might be slightly longer due to padding
+    min_len = min(mel.size(2), mel_recon.size(2))
+    loss_mel_recon = F.l1_loss(mel_recon[:, :, :min_len], mel[:, :, :min_len])
+
+    losses['mel_recon_loss'] = loss_mel_recon
+
     return losses
 
   def infer(self, text, text_lengths, n_timesteps=10, duration_scale=1.0,

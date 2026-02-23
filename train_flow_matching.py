@@ -87,6 +87,13 @@ def run(rank, n_gpus, hps):
     subbands=hps.model.subbands,
     use_duration_predictor=getattr(hps.model, 'use_duration_predictor', True),
     gin_channels=hps.model.gin_channels,
+    # Audio params for mel reconstruction
+    sampling_rate=hps.data.sampling_rate,
+    filter_length=hps.data.filter_length,
+    hop_length=hps.data.hop_length,
+    win_length=hps.data.win_length,
+    mel_fmin=hps.data.mel_fmin,
+    mel_fmax=hps.data.mel_fmax,
   ).cuda(rank)
 
   # Discriminator for vocoder part (optional, for better audio quality)
@@ -182,8 +189,9 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
 
       loss_flow = loss_dict['flow_loss']
       loss_dur = loss_dict.get('duration_loss', torch.tensor(0.0).cuda(rank))
+      loss_mel_recon = loss_dict.get('mel_recon_loss', torch.tensor(0.0).cuda(rank))
 
-      loss_gen = loss_flow + 0.1 * loss_dur  # Weight duration loss lower
+      loss_gen = loss_flow + 0.1 * loss_dur + 45.0 * loss_mel_recon  # Add mel reconstruction loss
 
     # Generator backward
     optim_g.zero_grad()
@@ -223,12 +231,12 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
     if rank == 0:
       if global_step % hps.train.log_interval == 0:
         lr = optim_g.param_groups[0]['lr']
-        losses_str = f"[{global_step}] loss_flow={loss_flow:.3f}, loss_dur={loss_dur:.3f}"
+        losses_str = f"[{global_step}] loss_flow={loss_flow:.3f}, loss_dur={loss_dur:.3f}, loss_mel_recon={loss_mel_recon:.3f}"
         if use_discriminator and global_step % 2 == 0:
           losses_str += f", loss_disc={loss_disc:.3f}"
         logger.info(losses_str)
 
-        scalar_dict = {"loss/flow": loss_flow, "loss/dur": loss_dur,
+        scalar_dict = {"loss/flow": loss_flow, "loss/dur": loss_dur, "loss/mel_recon": loss_mel_recon,
                       "learning_rate": lr, "grad_norm_g": grad_norm_g}
         if use_discriminator and global_step % 2 == 0:
           scalar_dict["loss/disc"] = loss_disc
